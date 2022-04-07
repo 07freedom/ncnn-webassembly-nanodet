@@ -88,11 +88,26 @@ static void on_image_render(cv::Mat& rgba)
     draw_fps(rgba);
 }
 
+static void img_detect(cv::Mat& rgba, const std::vector<Object>& objects)
+{
+    if (!g_nanodet)
+    {
+        g_nanodet = new NanoDet;
+        g_nanodet->load("coco.torchscript.ncnn");
+    }
+    g_nanodet->detect(rgba, objects);
+
+    g_nanodet->draw(rgba, objects);
+
+    draw_fps(rgba);
+}
+
 #ifdef __EMSCRIPTEN_PTHREADS__
 
 static const unsigned char* rgba_data = 0;
 static int w = 0;
 static int h = 0;
+static float* result_buffer = 0;
 
 static ncnn::Mutex lock;
 static ncnn::ConditionVariable condition;
@@ -111,9 +126,21 @@ static void worker()
         }
 
         cv::Mat rgba(h, w, CV_8UC4, (void*)rgba_data);
+        std::vector<Object> objects;
 
-        on_image_render(rgba);
+        img_detect(rgba, objects);
 
+        const int count = objects.size();
+        for (int i = 0; i < count; i++)
+        {
+            result_buffer[i*6+0] = objects[i].rect.x;
+            result_buffer[i*6+1] = objects[i].rect.y;
+            result_buffer[i*6+2] = objects[i].rect.width;
+            result_buffer[i*6+3] = objects[i].rect.height;
+            result_buffer[i*6+4] = objects[i].label;
+            result_buffer[i*6+5] = objects[i].prob;
+        }
+        
         rgba_data = 0;
 
         lock.unlock();
@@ -129,7 +156,7 @@ static std::thread t(worker);
 
 extern "C" {
 
-void nanodet_ncnn(unsigned char* _rgba_data, int _w, int _h)
+void nanodet_ncnn(unsigned char* _rgba_data, int _w, int _h, float* _result_buffer)
     {
         lock.lock();
         while (rgba_data != 0)
@@ -140,6 +167,7 @@ void nanodet_ncnn(unsigned char* _rgba_data, int _w, int _h)
         rgba_data = _rgba_data;
         w = _w;
         h = _h;
+        result_buffer = _result_buffer;
 
         lock.unlock();
 
@@ -160,11 +188,21 @@ void nanodet_ncnn(unsigned char* _rgba_data, int _w, int _h)
 
 extern "C" {
 
-void nanodet_ncnn(unsigned char* rgba_data, int w, int h)
+void nanodet_ncnn(unsigned char* rgba_data, int w, int h, float* result_buffer)
     {
     cv::Mat rgba(h, w, CV_8UC4, (void*)rgba_data);
+    std::vector<Object> objects;
+    img_detect(rgba, objects);
 
-        on_image_render(rgba);
+    for (int i = 0; i < objects.size(); i++)
+    {
+        result_buffer[i*6+0] = objects[i].rect.x;
+        result_buffer[i*6+1] = objects[i].rect.y;
+        result_buffer[i*6+2] = objects[i].rect.width;
+        result_buffer[i*6+3] = objects[i].rect.height;
+        result_buffer[i*6+4] = objects[i].label;
+        result_buffer[i*6+5] = objects[i].prob;
+    }
     }
 
 }

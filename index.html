@@ -101,6 +101,7 @@
         var h = 480;
 
         var dst = null;
+        var fst = null;
         var resultarray = null;
         var resultbuffer = null;
         window.addEventListener('DOMContentLoaded', function() {
@@ -139,9 +140,14 @@
                         _free(dst);
                         dst = null;
                     }
+                    if (fst != null)
+                    {
+                        _free(fst);
+                        fst = null;
+                    }
 
                     dst = _malloc(d.length);
-
+                    fst = _malloc(200 * Float32Array.BYTES_PER_ELEMENT);
                     //console.log("What " + d.length);
 
                     sFilter();
@@ -192,12 +198,18 @@
 
             var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             var data = imageData.data;
+            var array = new Float32Array(200);
 
             HEAPU8.set(data, dst);
 
-            _nanodet_ncnn(dst, canvas.width, canvas.height);
+            HEAPF32.set(array, fst / Float32Array.BYTES_PER_ELEMENT);
+
+            _nanodet_ncnn(dst, canvas.width, canvas.height, fst);
 
             var result = HEAPU8.subarray(dst, dst + data.length);
+
+            var boxes = HEAPF32.subarray(fst / Float32Array.BYTES_PER_ELEMENT, fst / Float32Array.BYTES_PER_ELEMENT + 200);
+            console.log(boxes);
             imageData.data.set(result);
             ctx.putImageData(imageData, 0, 0);
         }
